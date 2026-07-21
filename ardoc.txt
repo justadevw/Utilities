@@ -1,0 +1,77 @@
+h1. Release Process – Admin Review
+
+{info:title=Purpose}
+Standard operating procedure for reviewing, releasing, and closing out a story through the QA workflows and Daily ingestion pipeline. All actions in this procedure are performed by the Admin Reviewer.
+{info}
+
+h2. Phase 1 – Review
+
+# Read the story and understand the requirements.
+# List the artifacts to release.
+# List the governance details of the artifacts.
+# Review code for stylistic deficiencies, coding best practices, and standards.
+# Request changes if deficiencies are found.
+
+h2. Phase 2 – Validation
+
+# Review story validation.
+# Run the validation notebook(s).
+# Request changes if deficiencies are found.
+
+h2. Phase 3 – Release Workflow
+
+# Run the appropriate Release Workflow based on the table scenario:
+
+|| Scenario || Workflow || What it does ||
+| New (non-existent) table | [QA_Workflow_Release|##PLACEHOLDER_LINK##] | Creates a table that does not yet exist |
+| Existing table – recreate | [QA_Workflow_Recreate|##PLACEHOLDER_LINK##] | Deletes the existing table, then creates it back |
+| Existing table – update | [QA_Workflow_Update|##PLACEHOLDER_LINK##] | Overwrites an existing table |
+
+## Go to the workflow tasks and change the following, depending on the story's requirements:
+##* Change the clusters to be used
+##* Change the source to the repo (Git provider)
+##* Insert the repo URL in the repo settings
+##* Insert the branch name in the repo settings (Git ref)
+##* Select the branch in the Git reference
+##* Select *GitHub Enterprise Server* as the provider
+##* Insert the notebook path in the task settings
+##* Edit dependencies
+# If the workflow fails, request changes.
+
+h2. Phase 4 – Governance / Immuta
+
+# If the workflow succeeds, request Immuta tags if needed.
+
+{panel:title=Immuta Tag Request}
+Immuta tags are requested by sending an email to the Data Governance Steward. The email must contain:
+* *Action* – tagging a new table, or refreshing the tags of an existing table
+* *Table name(s)* – the table(s) involved
+* *Immuta tags* (new tables only) – applicable tags: W&B, LG, Carbon
+* *Audience* (new tables only) – USP, NUSP
+{panel}
+
+# After Immuta provisioning, orchestrate a full re-create workflow with all the pipeline dependencies for the story.
+# If the re-create workflow fails, request changes.
+
+h2. Phase 5 – Merge & Orchestrate
+
+# Approve and merge code to master, then pull the master repo into the Databricks [QA_Workflow|##PLACEHOLDER_LINK##] repo.
+# If the re-create workflow succeeds, add orchestration to the [QA_Workflow_Daily|##PLACEHOLDER_LINK##] (adding it via YAML is easier).
+
+h2. Phase 6 – Verify & Close
+
+# Wait for a Daily ingestion to run completely on its schedule.
+
+{note}
+The Daily ingestion runs every day at *6:00 PM AST* and typically takes *~2.5 hours* to complete.
+{note}
+
+# On a successful run, mark the story as Released.
+
+{warning:title=If Daily ingestion fails after release}
+Roll back the changes to the workflow job and perform the turnback process.
+{warning}
+
+# Update the workflow documentation.
+# Address checklist items post-release.
+# Mark the story as Done.
