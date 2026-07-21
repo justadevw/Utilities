@@ -1,0 +1,386 @@
+# Databricks notebook source
+# MAGIC %md
+# MAGIC # Databricks Story Release Utility
+# MAGIC
+# MAGIC Enter ordinary Databricks notebook parameters and run this notebook.
+# MAGIC `workflow_action` controls the job itself; `task_value_behavior` selects
+# MAGIC the Task Values notebook embedded in that job.
+
+# COMMAND ----------
+
+from pprint import pformat
+from typing import Any, Dict, Optional
+
+
+# Edit these two static values once for your repository.
+GIT_URL = "REPLACE_WITH_YOUR_GIT_REPOSITORY_URL"
+GIT_PROVIDER = "GIT_HUB_ENTERPRISE"
+
+
+# COMMAND ----------
+
+# Keep this list in the same order as the widget definitions below. Databricks
+# preserves widgets after their defining code is removed, so an older version
+# of this notebook can otherwise leave obsolete inputs in the widget panel.
+EXPECTED_WIDGET_NAMES = (
+    "workflow_action",
+    "job_name",
+    "job_id",
+    "source",
+    "environment",
+    "task_value_behavior",
+    "git_reference_type",
+    "git_reference",
+    "task_values_base_path",
+    "task_values_cluster_id",
+    "notebook_paths",
+    "notebook_compute_ids",
+    "notebook_task_keys",
+    "notebook_dependencies",
+    "job_description",
+    "job_tags",
+    "max_concurrent_runs",
+    "job_timeout_seconds",
+    "run_after_change",
+    "wait_for_run",
+    "run_timeout_minutes",
+    "job_parameters",
+    "idempotency_token",
+    "dry_run",
+)
+
+existing_widget_names = set(dbutils.widgets.getAll())
+obsolete_widget_names = sorted(existing_widget_names - set(EXPECTED_WIDGET_NAMES))
+for obsolete_widget_name in obsolete_widget_names:
+    dbutils.widgets.remove(obsolete_widget_name)
+
+if obsolete_widget_names:
+    print("Removed obsolete notebook parameters: " + ", ".join(obsolete_widget_names))
+
+
+# COMMAND ----------
+
+def ensure_text_widget(name: str, default_value: str, label: str) -> None:
+    """Create a text widget only when it does not already exist."""
+    try:
+        dbutils.widgets.get(name)
+    except Exception:
+        dbutils.widgets.text(name, default_value, label)
+
+
+def ensure_dropdown_widget(
+    name: str,
+    default_value: str,
+    choices: list[str],
+    label: str,
+) -> None:
+    """Create a dropdown widget only when it does not already exist."""
+    try:
+        dbutils.widgets.get(name)
+    except Exception:
+        dbutils.widgets.dropdown(name, default_value, choices, label)
+
+
+ensure_dropdown_widget(
+    "workflow_action",
+    "CREATE",
+    ["CREATE", "UPDATE", "RE_CREATE", "DELETE", "RUN"],
+    "01 - Workflow action",
+)
+ensure_text_widget("job_name", "", "02 - Job name")
+ensure_text_widget("job_id", "", "03 - Job ID (optional)")
+ensure_dropdown_widget(
+    "source", "WORKSPACE", ["WORKSPACE", "GIT"], "04 - Notebook source"
+)
+ensure_dropdown_widget(
+    "environment", "DEV", ["DEV", "QA", "PROD"], "05 - Data environment"
+)
+ensure_dropdown_widget(
+    "task_value_behavior",
+    "CREATE",
+    ["CREATE", "UPDATE", "RE_CREATE"],
+    "06 - Task Value behavior",
+)
+ensure_dropdown_widget(
+    "git_reference_type",
+    "BRANCH",
+    ["BRANCH", "TAG"],
+    "07 - Git reference type",
+)
+ensure_text_widget("git_reference", "main", "08 - Git branch or tag")
+ensure_text_widget(
+    "task_values_base_path",
+    "/Workspace/Workflow_Task_Values",
+    "09 - Task Values base path",
+)
+ensure_text_widget(
+    "task_values_cluster_id",
+    "",
+    "10 - Task Values notebook compute ID",
+)
+ensure_text_widget(
+    "notebook_paths",
+    "",
+    "11 - Notebook paths separated by semicolons",
+)
+ensure_text_widget(
+    "notebook_compute_ids",
+    "",
+    "12 - Matching compute IDs separated by semicolons",
+)
+ensure_text_widget(
+    "notebook_task_keys",
+    "",
+    "13 - Optional task keys separated by semicolons",
+)
+ensure_text_widget(
+    "notebook_dependencies",
+    "",
+    "14 - Dependencies by position, for example 2=1;3=1,2",
+)
+ensure_text_widget(
+    "job_description",
+    "Managed by the Databricks Story Release Utility.",
+    "15 - Job description",
+)
+ensure_text_widget(
+    "job_tags",
+    "",
+    "16 - Optional tags: key=value;key2=value2",
+)
+ensure_text_widget("max_concurrent_runs", "1", "17 - Maximum concurrent runs")
+ensure_text_widget("job_timeout_seconds", "0", "18 - Job timeout in seconds")
+ensure_dropdown_widget(
+    "run_after_change",
+    "OFF",
+    ["OFF", "ON"],
+    "19 - Run after CREATE/UPDATE/RE_CREATE",
+)
+ensure_dropdown_widget(
+    "wait_for_run", "OFF", ["OFF", "ON"], "20 - Wait for run completion"
+)
+ensure_text_widget("run_timeout_minutes", "120", "21 - Run wait timeout in minutes")
+ensure_text_widget(
+    "job_parameters",
+    "",
+    "22 - Optional run parameters: key=value;key2=value2",
+)
+ensure_text_widget("idempotency_token", "", "23 - Run idempotency token (optional)")
+ensure_dropdown_widget(
+    "dry_run", "ON", ["ON", "OFF"], "24 - Dry run"
+)
+
+missing_widget_names = [
+    name for name in EXPECTED_WIDGET_NAMES if name not in dbutils.widgets.getAll()
+]
+if missing_widget_names:
+    raise RuntimeError(
+        "The following notebook parameters could not be created: "
+        + ", ".join(missing_widget_names)
+    )
+
+print(
+    f"Notebook parameters ready: {len(EXPECTED_WIDGET_NAMES)} "
+    f"of {len(EXPECTED_WIDGET_NAMES)}"
+)
+
+
+# COMMAND ----------
+
+# MAGIC %run ./01_workflow_manager
+
+# COMMAND ----------
+
+def widget_value(name: str) -> str:
+    return dbutils.widgets.get(name).strip()
+
+
+def parse_optional_job_id(raw_value: str) -> Optional[int]:
+    if not raw_value:
+        return None
+    try:
+        job_id = int(raw_value)
+    except ValueError as exc:
+        raise WorkflowValidationError("job_id must be an integer when supplied.") from exc
+    if job_id <= 0:
+        raise WorkflowValidationError("job_id must be greater than zero.")
+    return job_id
+
+
+workflow_action = widget_value("workflow_action").upper()
+valid_actions = {"CREATE", "UPDATE", "RE_CREATE", "DELETE", "RUN"}
+if workflow_action not in valid_actions:
+    raise WorkflowValidationError(
+        "workflow_action must be one of: " + ", ".join(sorted(valid_actions))
+    )
+
+job_name = widget_value("job_name")
+job_id = parse_optional_job_id(widget_value("job_id"))
+dry_run = parse_bool(widget_value("dry_run"), "dry_run")
+run_after_change = parse_bool(
+    widget_value("run_after_change"), "run_after_change"
+)
+wait_for_run = parse_bool(widget_value("wait_for_run"), "wait_for_run")
+
+try:
+    run_timeout_minutes = int(widget_value("run_timeout_minutes"))
+except ValueError as exc:
+    raise WorkflowValidationError("run_timeout_minutes must be an integer.") from exc
+if run_timeout_minutes < 1:
+    raise WorkflowValidationError("run_timeout_minutes must be at least 1.")
+
+job_parameters = parse_key_value_parameter(
+    widget_value("job_parameters"), "job_parameters"
+)
+idempotency_token = widget_value("idempotency_token") or None
+
+if workflow_action == "CREATE" and job_id is not None:
+    raise WorkflowValidationError("CREATE accepts job_name only; leave job_id empty.")
+if workflow_action in {"UPDATE", "RE_CREATE", "DELETE", "RUN"} and not (
+    job_id or job_name
+):
+    raise WorkflowValidationError(
+        f"{workflow_action} requires job_id, job_name, or both."
+    )
+
+
+manager = DatabricksWorkflowManager()
+
+
+# COMMAND ----------
+
+definition = None
+if workflow_action in {"CREATE", "UPDATE", "RE_CREATE"}:
+    if workflow_action == "CREATE" and not job_name:
+        raise WorkflowValidationError("job_name is required for CREATE.")
+    if workflow_action in {"UPDATE", "RE_CREATE"} and not job_name:
+        # job_id alone is a valid identifier. Reuse the current name as the
+        # desired name when the operator does not supply one.
+        target_for_name = manager.find_job(job_id=job_id)
+        job_name = target_for_name.settings.name
+
+    source = parse_enum(NotebookSource, widget_value("source"), "source")
+    environment = parse_enum(
+        ReleaseEnvironment, widget_value("environment"), "environment"
+    )
+    task_value_behavior = parse_enum(
+        TaskValueBehavior,
+        widget_value("task_value_behavior"),
+        "task_value_behavior",
+    )
+
+    tasks = notebook_tasks_from_parameters(
+        notebook_paths=widget_value("notebook_paths"),
+        notebook_compute_ids=widget_value("notebook_compute_ids"),
+        notebook_task_keys=widget_value("notebook_task_keys"),
+        notebook_dependencies=widget_value("notebook_dependencies"),
+    )
+    additional_tags = parse_key_value_parameter(
+        widget_value("job_tags"), "job_tags"
+    )
+
+    try:
+        max_concurrent_runs = int(widget_value("max_concurrent_runs"))
+        job_timeout_seconds = int(widget_value("job_timeout_seconds"))
+    except ValueError as exc:
+        raise WorkflowValidationError(
+            "max_concurrent_runs and job_timeout_seconds must be integers."
+        ) from exc
+
+    git_reference = None
+    if source is NotebookSource.GIT:
+        git_reference = GitReference(
+            url=GIT_URL,
+            provider=GIT_PROVIDER,
+            reference_type=parse_enum(
+                GitReferenceType,
+                widget_value("git_reference_type"),
+                "git_reference_type",
+            ),
+            reference=widget_value("git_reference"),
+        )
+
+    definition = WorkflowDefinition(
+        job_name=job_name,
+        source=source,
+        environment=environment,
+        task_value_behavior=task_value_behavior,
+        task_values_base_path=widget_value("task_values_base_path"),
+        task_values_cluster_id=widget_value("task_values_cluster_id"),
+        task_values_task_key="set_task_values",
+        tasks=tasks,
+        git_reference=git_reference,
+        description=widget_value("job_description"),
+        max_concurrent_runs=max_concurrent_runs,
+        timeout_seconds=job_timeout_seconds,
+        tags=additional_tags,
+    )
+
+
+# COMMAND ----------
+
+if dry_run:
+    if definition is not None:
+        result: Dict[str, Any] = {
+            "status": "DRY_RUN",
+            "action": workflow_action,
+            "job_id": job_id,
+            "job_name": job_name,
+            "job_settings": manager.preview(definition),
+        }
+        if workflow_action in {"UPDATE", "RE_CREATE"}:
+            target = manager.find_job(job_id=job_id, job_name=job_name)
+            result["resolved_target_job_id"] = target.job_id
+    else:
+        target = manager.find_job(job_id=job_id, job_name=job_name)
+        result = {
+            "status": "DRY_RUN",
+            "action": workflow_action,
+            "job_id": target.job_id,
+            "job_name": target.settings.name,
+        }
+        if workflow_action == "RUN":
+            result["note"] = (
+                "RUN uses the Task Values notebook already stored in the job. "
+                "Use UPDATE or RE_CREATE first to change environment or behavior."
+            )
+else:
+    if workflow_action == "CREATE":
+        assert definition is not None
+        result = manager.create_job(definition)
+    elif workflow_action == "UPDATE":
+        assert definition is not None
+        result = manager.update_job(
+            definition, job_id=job_id, job_name=job_name
+        )
+    elif workflow_action == "RE_CREATE":
+        assert definition is not None
+        result = manager.recreate_job(
+            definition, job_id=job_id, job_name=job_name
+        )
+    elif workflow_action == "DELETE":
+        result = manager.delete_job(job_id=job_id, job_name=job_name)
+    else:
+        result = manager.run_job(
+            job_id=job_id,
+            job_name=job_name,
+            wait=wait_for_run,
+            timeout_minutes=run_timeout_minutes,
+            job_parameters=job_parameters,
+            idempotency_token=idempotency_token,
+        )
+        result["note"] = "RUN used the Task Values notebook stored in the job."
+
+    if workflow_action in {"CREATE", "UPDATE", "RE_CREATE"} and run_after_change:
+        run_result = manager.run_job(
+            job_id=result["job_id"],
+            wait=wait_for_run,
+            timeout_minutes=run_timeout_minutes,
+            job_parameters=job_parameters,
+            idempotency_token=idempotency_token,
+        )
+        result = {"change": result, "run": run_result}
+
+output_text = pformat(result, sort_dicts=False, width=120)
+print(output_text)
+dbutils.notebook.exit(output_text)
