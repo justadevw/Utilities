@@ -1,0 +1,128 @@
+<h1>Release Process – Admin Review</h1>
+
+<ac:structured-macro ac:name="info">
+  <ac:parameter ac:name="title">Purpose</ac:parameter>
+  <ac:rich-text-body>
+    <p>Standard operating procedure for reviewing, releasing, and closing out a story through the QA workflows and Daily ingestion pipeline. All actions in this procedure are performed by the Admin Reviewer.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+
+<h2>Phase 1 – Review</h2>
+<ol start="1">
+  <li>Read the story and understand the requirements.</li>
+  <li>List the artifacts to release.</li>
+  <li>List the governance details of the artifacts.</li>
+  <li>Review code for stylistic deficiencies, coding best practices, and standards.</li>
+  <li>Request changes if deficiencies are found.</li>
+</ol>
+
+<h2>Phase 2 – Validation</h2>
+<ol start="6">
+  <li>Review story validation.</li>
+  <li>Run the validation notebook(s).</li>
+  <li>Request changes if deficiencies are found.</li>
+</ol>
+
+<h2>Phase 3 – Release Workflow</h2>
+<ol start="9">
+  <li>
+    <p>Run the appropriate Release Workflow based on the table scenario:</p>
+    <table>
+      <tbody>
+        <tr>
+          <th>Scenario</th>
+          <th>Workflow</th>
+          <th>What it does</th>
+        </tr>
+        <tr>
+          <td>New (non-existent) table</td>
+          <td><a href="##PLACEHOLDER_LINK##">QA_Workflow_Release</a></td>
+          <td>Creates a table that does not yet exist</td>
+        </tr>
+        <tr>
+          <td>Existing table – recreate</td>
+          <td><a href="##PLACEHOLDER_LINK##">QA_Workflow_Recreate</a></td>
+          <td>Deletes the existing table, then creates it back</td>
+        </tr>
+        <tr>
+          <td>Existing table – update</td>
+          <td><a href="##PLACEHOLDER_LINK##">QA_Workflow_Update</a></td>
+          <td>Overwrites an existing table</td>
+        </tr>
+      </tbody>
+    </table>
+    <ol>
+      <li>
+        <p>Go to the workflow tasks and change the following, depending on the story's requirements:</p>
+        <ul>
+          <li>Change the clusters to be used</li>
+          <li>Change the source to the repo (Git provider)</li>
+          <li>Insert the repo URL in the repo settings</li>
+          <li>Insert the branch name in the repo settings (Git ref)</li>
+          <li>Select the branch in the Git reference</li>
+          <li>Select <strong>GitHub Enterprise Server</strong> as the provider</li>
+          <li>Insert the notebook path in the task settings</li>
+          <li>Edit dependencies</li>
+        </ul>
+      </li>
+    </ol>
+  </li>
+  <li>If the workflow fails, request changes.</li>
+</ol>
+
+<h2>Phase 4 – Governance / Immuta</h2>
+<ol start="11">
+  <li>If the workflow succeeds, request Immuta tags if needed.</li>
+</ol>
+
+<ac:structured-macro ac:name="panel">
+  <ac:parameter ac:name="title">Immuta Tag Request</ac:parameter>
+  <ac:rich-text-body>
+    <p>Immuta tags are requested by sending an email to the Data Governance Steward. The email must contain:</p>
+    <ul>
+      <li><strong>Action</strong> – tagging a new table, or refreshing the tags of an existing table</li>
+      <li><strong>Table name(s)</strong> – the table(s) involved</li>
+      <li><strong>Immuta tags</strong> (new tables only) – applicable tags: W&amp;B, LG, Carbon</li>
+      <li><strong>Audience</strong> (new tables only) – USP, NUSP</li>
+    </ul>
+  </ac:rich-text-body>
+</ac:structured-macro>
+
+<ol start="12">
+  <li>After Immuta provisioning, orchestrate a full re-create workflow with all the pipeline dependencies for the story.</li>
+  <li>If the re-create workflow fails, request changes.</li>
+</ol>
+
+<h2>Phase 5 – Merge &amp; Orchestrate</h2>
+<ol start="14">
+  <li>Approve and merge code to master, then pull the master repo into the Databricks <a href="##PLACEHOLDER_LINK##">QA_Workflow</a> repo.</li>
+  <li>If the re-create workflow succeeds, add orchestration to the <a href="##PLACEHOLDER_LINK##">QA_Workflow_Daily</a> (adding it via YAML is easier).</li>
+</ol>
+
+<h2>Phase 6 – Verify &amp; Close</h2>
+<ol start="16">
+  <li>Wait for a Daily ingestion to run completely on its schedule.</li>
+</ol>
+
+<ac:structured-macro ac:name="note">
+  <ac:rich-text-body>
+    <p>The Daily ingestion runs every day at <strong>6:00 PM AST</strong> and typically takes <strong>~2.5 hours</strong> to complete.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+
+<ol start="17">
+  <li>On a successful run, mark the story as Released.</li>
+</ol>
+
+<ac:structured-macro ac:name="warning">
+  <ac:parameter ac:name="title">If Daily ingestion fails after release</ac:parameter>
+  <ac:rich-text-body>
+    <p>Roll back the changes to the workflow job and perform the turnback process.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+
+<ol start="18">
+  <li>Update the workflow documentation.</li>
+  <li>Address checklist items post-release.</li>
+  <li>Mark the story as Done.</li>
+</ol>
